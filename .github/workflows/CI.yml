@@ -45,7 +45,7 @@ jobs:
         run: chmod +x gradlew
 
       - name: Lint with Gradle
-        run: ./gradlew lintStbetaRelease
+        run: ./gradlew lintStmobileRelease
 
       - name: Upload Lint Report
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
@@ -56,7 +56,40 @@ jobs:
           if-no-files-found: warn
 
       - name: Build with Gradle
-        run: ./gradlew clean assembleStbetaRelease
+        run: ./gradlew clean assembleStmobileRelease
+
+      - name: Verify APK signatures (v1 + v2 + v3)
+        run: |
+          set -euo pipefail
+          sdk="${ANDROID_HOME:-/usr/local/lib/android/sdk}"
+          apksigner="$(ls "$sdk"/build-tools/*/apksigner 2>/dev/null | sort -V | tail -1 || true)"
+          if [ -z "$apksigner" ]; then
+            echo "::error::找不到 apksigner，簽名檢查無法進行"
+            exit 1
+          fi
+          shopt -s nullglob
+          apks=(./smarttubetv/build/outputs/apk/stmobile/release/*.apk)
+          if [ "${#apks[@]}" -eq 0 ]; then
+            echo "::error::沒有產出任何 APK"
+            exit 1
+          fi
+          for apk in "${apks[@]}"; do
+            # --min-sdk-version 21 是強迫 apksigner 連 v1 一起驗：包的 minSdk 是 24 時不帶
+            # 這個參數它會跳過 v1，把只簽 v2/v3 的包唸成合格。
+            if ! out="$("$apksigner" verify -v --min-sdk-version 21 "$apk" 2>&1)"; then
+              echo "::error::$apk 簽名不合格"
+              echo "$out"
+              exit 1
+            fi
+            for scheme in v1 v2 v3; do
+              if ! grep -q "^Verified using ${scheme} scheme.*: true$" <<<"$out"; then
+                echo "::error::$apk 缺少 ${scheme} 簽名"
+                echo "$out"
+                exit 1
+              fi
+            done
+            echo "OK: $(basename "$apk") v1+v2+v3 都過"
+          done
 
       - name: VirusTotal Scan
         if: ${{ env.HAS_VT_KEY == 'true' }}
@@ -65,7 +98,7 @@ jobs:
         with:
           vt_api_key: ${{ secrets.VIRUS_TOTAL_API_KEY }}
           files: |
-            ./smarttubetv/build/outputs/apk/stbeta/release/*.apk
+            ./smarttubetv/build/outputs/apk/stmobile/release/*.apk
           request_rate: 4
 
       - name: VirusTotal Summary
@@ -78,7 +111,7 @@ jobs:
           echo "| Artifact Name | VirusTotal Status | Detailed Report |" >> $GITHUB_STEP_SUMMARY
           echo "| :--- | :--- | :--- |" >> $GITHUB_STEP_SUMMARY
 
-          for apk in ./smarttubetv/build/outputs/apk/stbeta/release/*.apk; do
+          for apk in ./smarttubetv/build/outputs/apk/stmobile/release/*.apk; do
             filename=$(basename "$apk")
             sha256=$(sha256sum "$apk" | awk '{print $1}')
 
@@ -93,26 +126,26 @@ jobs:
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: SmartTube_${{ steps.get_version.outputs.VERSION_NAME }}_arm64
-          path: ./smarttubetv/build/outputs/apk/stbeta/release/*_arm64-v8a.apk
+          path: ./smarttubetv/build/outputs/apk/stmobile/release/*_arm64-v8a.apk
           if-no-files-found: error
 
       - name: Upload ARMv7 APK
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: SmartTube_${{ steps.get_version.outputs.VERSION_NAME }}_armeabi-v7a
-          path: ./smarttubetv/build/outputs/apk/stbeta/release/*_armeabi-v7a.apk
+          path: ./smarttubetv/build/outputs/apk/stmobile/release/*_armeabi-v7a.apk
           if-no-files-found: error
 
       - name: Upload Universal APK
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: SmartTube_${{ steps.get_version.outputs.VERSION_NAME }}_universal
-          path: ./smarttubetv/build/outputs/apk/stbeta/release/*_universal.apk
+          path: ./smarttubetv/build/outputs/apk/stmobile/release/*_universal.apk
           if-no-files-found: error
 
       - name: Upload x86 APK
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: SmartTube_${{ steps.get_version.outputs.VERSION_NAME }}_x86
-          path: ./smarttubetv/build/outputs/apk/stbeta/release/*_x86.apk
+          path: ./smarttubetv/build/outputs/apk/stmobile/release/*_x86.apk
           if-no-files-found: error
