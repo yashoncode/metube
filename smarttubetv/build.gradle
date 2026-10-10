@@ -199,6 +199,13 @@ android {
 
     signingConfigs {
         release {
+            // 三套簽名一律釘成開：minSdk 24 讓 AGP 預設不再產 v1（JAR）簽名，
+            // 實測 run 38024744981 的產物就被 CI 的簽名收口紅掉。Groovy DSL 這裡
+            // 只能用賦值寫法——`enableV1Signing true` 那種方法調用在 Gradle 9.8 實測
+            // 報 Could not find method（本機用同版本 Gradle 驗過）。
+            enableV1Signing = true
+            enableV2Signing = true
+            enableV3Signing = true
             if (keystorePropertiesFile.exists()) {
                 storeFile = file(keystoreProperties['storeFile'])
                 storePassword = keystoreProperties['storePassword']
